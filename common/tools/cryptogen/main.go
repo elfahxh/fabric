@@ -304,11 +304,13 @@ func extendPeerOrg(orgSpec OrgSpec) {
 	usersDir := filepath.Join(orgDir, "users")
 	caDir := filepath.Join(orgDir, "ca")
 	tlscaDir := filepath.Join(orgDir, "tlsca")
+	// Use "PLUGIN" generate CA
+	signCA := getCA(caDir, orgSpec, orgSpec.CA.CommonName, "PLUGIN")
+	// Use "SW"generate tlsCA
+	tlsCA := getCA(tlscaDir, orgSpec, "tls"+orgSpec.CA.CommonName, "SW")
 
-	signCA := getCA(caDir, orgSpec, orgSpec.CA.CommonName)
-	tlsCA := getCA(tlscaDir, orgSpec, "tls"+orgSpec.CA.CommonName)
-
-	generateNodes(peersDir, orgSpec.Specs, signCA, tlsCA, msp.PEER, orgSpec.EnableNodeOUs)
+	//  Use "PLUGIN" generate localMSP
+	generateNodes(peersDir, "PLUGIN", orgSpec.Specs, signCA, tlsCA, msp.PEER, orgSpec.EnableNodeOUs)
 
 	adminUser := NodeSpec{
 		CommonName: fmt.Sprintf("%s@%s", adminBaseName, orgName),
@@ -333,8 +335,8 @@ func extendPeerOrg(orgSpec OrgSpec) {
 
 		users = append(users, user)
 	}
-
-	generateNodes(usersDir, users, signCA, tlsCA, msp.CLIENT, orgSpec.EnableNodeOUs)
+	// Use "SW"generate users
+	generateNodes(usersDir, "SW", users, signCA, tlsCA, msp.CLIENT, orgSpec.EnableNodeOUs)
 }
 
 func extendOrdererOrg(orgSpec OrgSpec) {
@@ -350,10 +352,10 @@ func extendOrdererOrg(orgSpec OrgSpec) {
 		return
 	}
 
-	signCA := getCA(caDir, orgSpec, orgSpec.CA.CommonName)
-	tlsCA := getCA(tlscaDir, orgSpec, "tls"+orgSpec.CA.CommonName)
+	signCA := getCA(caDir, orgSpec, orgSpec.CA.CommonName, "PLUGIN")
+	tlsCA := getCA(tlscaDir, orgSpec, "tls"+orgSpec.CA.CommonName, "SW")
 
-	generateNodes(orderersDir, orgSpec.Specs, signCA, tlsCA, msp.ORDERER, false)
+	generateNodes(orderersDir, "PLUGIN", orgSpec.Specs, signCA, tlsCA, msp.ORDERER, false)
 
 	adminUser := NodeSpec{
 		CommonName: fmt.Sprintf("%s@%s", adminBaseName, orgName),
@@ -513,14 +515,16 @@ func generatePeerOrg(baseDir string, orgSpec OrgSpec) {
 	peersDir := filepath.Join(orgDir, "peers")
 	usersDir := filepath.Join(orgDir, "users")
 	adminCertsDir := filepath.Join(mspDir, "admincerts")
+	// Use "PLUGIN" generate CA
 	// generate signing CA
-	signCA, err := ca.NewCA(caDir, orgName, orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode)
+	signCA, err := ca.NewCA(caDir, orgName, orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode, "PLUGIN")
 	if err != nil {
 		fmt.Printf("Error generating signCA for org %s:\n%v\n", orgName, err)
 		os.Exit(1)
 	}
+	// Use "SW" generate tlsCA
 	// generate TLS CA
-	tlsCA, err := ca.NewCA(tlsCADir, orgName, "tls"+orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode)
+	tlsCA, err := ca.NewCA(tlsCADir, orgName, "tls"+orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode, "SW")
 	if err != nil {
 		fmt.Printf("Error generating tlsCA for org %s:\n%v\n", orgName, err)
 		os.Exit(1)
@@ -532,7 +536,8 @@ func generatePeerOrg(baseDir string, orgSpec OrgSpec) {
 		os.Exit(1)
 	}
 
-	generateNodes(peersDir, orgSpec.Specs, signCA, tlsCA, msp.PEER, orgSpec.EnableNodeOUs)
+	// Use "PLUGIN" generate localMsp
+	generateNodes(peersDir, "PLUGIN", orgSpec.Specs, signCA, tlsCA, msp.PEER, orgSpec.EnableNodeOUs)
 
 	// TODO: add ability to specify usernames
 	users := []NodeSpec{}
@@ -549,7 +554,8 @@ func generatePeerOrg(baseDir string, orgSpec OrgSpec) {
 	}
 
 	users = append(users, adminUser)
-	generateNodes(usersDir, users, signCA, tlsCA, msp.CLIENT, orgSpec.EnableNodeOUs)
+	// Use "SW" generate users
+	generateNodes(usersDir, "SW", users, signCA, tlsCA, msp.CLIENT, orgSpec.EnableNodeOUs)
 
 	// copy the admin cert to the org's MSP admincerts
 	err = copyAdminCert(usersDir, adminCertsDir, adminUser.CommonName)
@@ -596,12 +602,12 @@ func copyAdminCert(usersDir, adminCertsDir, adminUserName string) error {
 
 }
 
-func generateNodes(baseDir string, nodes []NodeSpec, signCA *ca.CA, tlsCA *ca.CA, nodeType int, nodeOUs bool) {
+func generateNodes(baseDir, defaultBccsp string, nodes []NodeSpec, signCA *ca.CA, tlsCA *ca.CA, nodeType int, nodeOUs bool) {
 
 	for _, node := range nodes {
 		nodeDir := filepath.Join(baseDir, node.CommonName)
 		if _, err := os.Stat(nodeDir); os.IsNotExist(err) {
-			err := msp.GenerateLocalMSP(nodeDir, node.CommonName, node.SANS, signCA, tlsCA, nodeType, nodeOUs)
+			err := msp.GenerateLocalMSP(nodeDir, node.CommonName, defaultBccsp, node.SANS, signCA, tlsCA, nodeType, nodeOUs)
 			if err != nil {
 				fmt.Printf("Error generating local MSP for %s:\n%v\n", node, err)
 				os.Exit(1)
@@ -623,13 +629,15 @@ func generateOrdererOrg(baseDir string, orgSpec OrgSpec) {
 	usersDir := filepath.Join(orgDir, "users")
 	adminCertsDir := filepath.Join(mspDir, "admincerts")
 	// generate signing CA
-	signCA, err := ca.NewCA(caDir, orgName, orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode)
+	// Use "PLUGIN" generate CA
+	signCA, err := ca.NewCA(caDir, orgName, orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode, "PLUGIN")
 	if err != nil {
 		fmt.Printf("Error generating signCA for org %s:\n%v\n", orgName, err)
 		os.Exit(1)
 	}
 	// generate TLS CA
-	tlsCA, err := ca.NewCA(tlsCADir, orgName, "tls"+orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode)
+	// Use "SW" generate tlsCA
+	tlsCA, err := ca.NewCA(tlsCADir, orgName, "tls"+orgSpec.CA.CommonName, orgSpec.CA.Country, orgSpec.CA.Province, orgSpec.CA.Locality, orgSpec.CA.OrganizationalUnit, orgSpec.CA.StreetAddress, orgSpec.CA.PostalCode, "SW")
 	if err != nil {
 		fmt.Printf("Error generating tlsCA for org %s:\n%v\n", orgName, err)
 		os.Exit(1)
@@ -641,7 +649,8 @@ func generateOrdererOrg(baseDir string, orgSpec OrgSpec) {
 		os.Exit(1)
 	}
 
-	generateNodes(orderersDir, orgSpec.Specs, signCA, tlsCA, msp.ORDERER, false)
+	// Use "PLUGIN" generate localMsp
+	generateNodes(orderersDir, "PLUGIN", orgSpec.Specs, signCA, tlsCA, msp.ORDERER, false)
 
 	adminUser := NodeSpec{
 		CommonName: fmt.Sprintf("%s@%s", adminBaseName, orgName),
@@ -651,7 +660,8 @@ func generateOrdererOrg(baseDir string, orgSpec OrgSpec) {
 	users := []NodeSpec{}
 	// add an admin user
 	users = append(users, adminUser)
-	generateNodes(usersDir, users, signCA, tlsCA, msp.CLIENT, false)
+	// Use "SW" generate users
+	generateNodes(usersDir, "SW", users, signCA, tlsCA, msp.CLIENT, false)
 
 	// copy the admin cert to the org's MSP admincerts
 	err = copyAdminCert(usersDir, adminCertsDir, adminUser.CommonName)
@@ -697,8 +707,8 @@ func printVersion() {
 	fmt.Println(metadata.GetVersionInfo())
 }
 
-func getCA(caDir string, spec OrgSpec, name string) *ca.CA {
-	_, signer, _ := csp.LoadPrivateKey(caDir)
+func getCA(caDir string, spec OrgSpec, name, defaultBccsp string) *ca.CA {
+	_, signer, _ := csp.LoadPrivateKey(caDir, defaultBccsp)
 	cert, _ := ca.LoadCertificateECDSA(caDir)
 
 	return &ca.CA{

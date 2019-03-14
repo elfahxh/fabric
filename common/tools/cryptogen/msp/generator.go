@@ -36,7 +36,7 @@ var nodeOUMap = map[int]string{
 	PEER:   PEEROU,
 }
 
-func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
+func GenerateLocalMSP(baseDir, name, defaultBccsp string, sans []string, signCA *ca.CA,
 	tlsCA *ca.CA, nodeType int, nodeOUs bool) error {
 
 	// create folder structure
@@ -60,7 +60,7 @@ func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
 	keystore := filepath.Join(mspDir, "keystore")
 
 	// generate private key
-	priv, _, err := csp.GeneratePrivateKey(keystore)
+	priv, _, err := csp.GeneratePrivateKey(keystore, defaultBccsp)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func GenerateLocalMSP(baseDir, name string, sans []string, signCA *ca.CA,
 	*/
 
 	// generate private key
-	tlsPrivKey, _, err := csp.GeneratePrivateKey(tlsDir)
+	tlsPrivKey, _, err := csp.GeneratePrivateKey(tlsDir, "SW")
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func GenerateVerifyingMSP(baseDir string, signCA *ca.CA, tlsCA *ca.CA, nodeOUs b
 	// cleared up anyway by copyAdminCert, but
 	// we leave a valid admin for now for the sake
 	// of unit tests
-	factory.InitFactories(nil)
+	factory.InitFactories(csp.GetCspFactoryConfig("msp/keystore", "SW"))
 	bcsp := factory.GetDefault()
 	priv, err := bcsp.KeyGen(&bccsp.ECDSAP256KeyGenOpts{Temporary: true})
 	ecPubKey, err := csp.GetECPublicKey(priv)

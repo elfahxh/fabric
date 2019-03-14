@@ -10,6 +10,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -22,22 +23,12 @@ import (
 )
 
 // LoadPrivateKey loads a private key from file in keystorePath
-func LoadPrivateKey(keystorePath string) (bccsp.Key, crypto.Signer, error) {
+func LoadPrivateKey(keystorePath, defaultBccsp string) (bccsp.Key, crypto.Signer, error) {
 	var err error
 	var priv bccsp.Key
 	var s crypto.Signer
-
-	opts := &factory.FactoryOpts{
-		ProviderName: "SW",
-		SwOpts: &factory.SwOpts{
-			HashFamily: "SHA2",
-			SecLevel:   256,
-
-			FileKeystore: &factory.FileKeystoreOpts{
-				KeyStorePath: keystorePath,
-			},
-		},
-	}
+	fmt.Println("\n--> LoadPrivateKey: ", keystorePath)
+	opts := GetCspFactoryConfig(keystorePath, defaultBccsp)
 
 	csp, err := factory.GetBCCSPFromOpts(opts)
 	if err != nil {
@@ -79,24 +70,15 @@ func LoadPrivateKey(keystorePath string) (bccsp.Key, crypto.Signer, error) {
 }
 
 // GeneratePrivateKey creates a private key and stores it in keystorePath
-func GeneratePrivateKey(keystorePath string) (bccsp.Key,
+func GeneratePrivateKey(keystorePath, defaultBccsp string) (bccsp.Key,
 	crypto.Signer, error) {
-
+	fmt.Println("\n--> GeneratePrivateKey: ", keystorePath)
 	var err error
 	var priv bccsp.Key
 	var s crypto.Signer
 
-	opts := &factory.FactoryOpts{
-		ProviderName: "SW",
-		SwOpts: &factory.SwOpts{
-			HashFamily: "SHA2",
-			SecLevel:   256,
+	opts := GetCspFactoryConfig(keystorePath, defaultBccsp)
 
-			FileKeystore: &factory.FileKeystoreOpts{
-				KeyStorePath: keystorePath,
-			},
-		},
-	}
 	csp, err := factory.GetBCCSPFromOpts(opts)
 	if err == nil {
 		// generate a key
